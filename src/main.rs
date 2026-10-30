@@ -20,8 +20,9 @@ static GEMINI_MODEL: LazyLock<String> =
 static SYSTEM_PROMPT: LazyLock<String> =
     LazyLock::new(|| read_to_string("SYSTEM_PROMPT.md").expect("Where's the system prompt?"));
 
-static GEMINI_CLIENT: LazyLock<Gemini> =
-    LazyLock::new(|| Gemini::new(GEMINI_API_KEY.clone()).expect("Failed to create client!"));
+static GEMINI_CLIENT: LazyLock<Gemini> = LazyLock::new(|| {
+    Gemini::new(LazyLock::force(&GEMINI_API_KEY)).expect("Failed to create client!")
+});
 
 struct Handler;
 
