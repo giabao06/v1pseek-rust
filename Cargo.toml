@@ -8,7 +8,6 @@ serenity = "0.12"
 tokio = { version = "1.21.2", features = ["macros", "rt-multi-thread"] }
 gemini-rust = "2.0.0"
 dotenv = "0.15.0"
-fs = "0.0.6"
 
 [profile.release]
 strip = true
