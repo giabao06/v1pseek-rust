@@ -56,8 +56,10 @@ impl EventHandler for Handler {
                 .execute()
                 .await.expect("failed to get Gemini API response");
 
-            if let Err(why) = msg.reply(&context.http, ai_response.output_text()).await {
-                println!("Error sending msg: {why:?}");
+            let final_response: String = ai_response.output_text().chars().take(1999).collect();
+
+            if let Err(why) = msg.reply(&context.http, final_response).await {
+                println!("Error sending msg: {why:?}")
             }
         }
     }
