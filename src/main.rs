@@ -53,8 +53,11 @@ impl EventHandler for Handler {
             let display_name = &msg.author.display_name();
             let msg_content = &msg.content_safe(&context.cache);
             let system_prompt = LazyLock::force(&SYSTEM_PROMPT);
+
+            // rudimentary logging
             println!("{user_name:?}, channel {channel_name:?}: {msg_content:?}");
 
+            // call the Gemini API while constructing the full prompt on the fly
             let ai_response = GEMINI_CLIENT
                 .create_interaction()
                 .with_model(GEMINI_MODEL.clone())
@@ -64,8 +67,11 @@ impl EventHandler for Handler {
                 .execute()
                 .await.expect("failed to get Gemini API response");
 
+            // cut 1999 characters because Discord
             let final_response: String = ai_response.output_text().chars().take(1999).collect();
 
+            // send the AI reply.
+            // That's it. that's the bot. I made the thing in like a day or something. While being new to Rust.
             if let Err(why) = msg.reply(&context.http, final_response).await {
                 println!("Error sending msg: {why:?}")
             }
@@ -79,9 +85,14 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
+    // load dotenv
     dotenv().ok();
+    // take the token and set intenst
+    // We just need to read Server messages and message contents
     let token = env::var("BOT_TOKEN").expect("No token provided!");
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
+
+    // construct the client
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
         .await
