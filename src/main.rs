@@ -16,7 +16,7 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
-        if msg.content.starts_with("hey vipseek") {
+        if (msg.content.starts_with("hey vipseek") && !msg.author.bot) {
             // first reply that vip is typing
             let response = MessageBuilder::new().push("vip is typing...").build();
 
