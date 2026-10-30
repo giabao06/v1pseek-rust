@@ -44,6 +44,8 @@ impl EventHandler for Handler {
 
             let msg_content = &msg.content;
 
+            println!("{user_name:?}, channel {channel_name:?}: {msg_content:?}");
+
             let ai_response = gemini_client
                 .create_interaction()
                 .with_model("gemini-3.8-flash")
@@ -52,7 +54,6 @@ impl EventHandler for Handler {
                 ))
                 .execute()
                 .await.expect("failed to get Gemini API response");
-            println!("{}", ai_response.output_text());
 
             if let Err(why) = msg.reply(&context.http, ai_response.output_text()).await {
                 println!("Error sending msg: {why:?}");
