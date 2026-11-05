@@ -65,15 +65,31 @@ impl EventHandler for Handler {
                     "{system_prompt:?}\n\n Channel name: {channel_name:?}\nUser name: {user_name:?}\n, Display name: {display_name:?}\n Message: {msg_content:?}\n",
                 ))
                 .execute()
-                .await.expect("failed to get Gemini API response");
+                .await;
 
-            // cut 1999 characters because Discord
-            let final_response: String = ai_response.output_text().chars().take(1999).collect();
+            match ai_response {
+                Ok(v) => {
+                    // cut 1999 characters because Discord
+                    let final_response: String = v.output_text().chars().take(1999).collect();
 
-            // send the AI reply.
-            // That's it. that's the bot. I made the thing in like a day or something. While being new to Rust.
-            if let Err(why) = msg.reply(&context.http, final_response).await {
-                println!("Error sending msg: {why:?}")
+                    // send the AI reply.
+                    // That's it. that's the bot. I made the thing in like a day or something. While being new to Rust.
+                    if let Err(why) = msg.reply(&context.http, final_response).await {
+                        println!("Error sending msg: {why:?}")
+                    }
+                }
+                Err(e) => {
+                    println!("Failed to get Gemini API response: {e:?}");
+                    if let Err(why) = msg
+                        .reply(
+                            &context.http,
+                            "Giờ vip-chan hơi mệt, đợi tí rồi kêu lại nya~",
+                        )
+                        .await
+                    {
+                        println!("Error sending error msg: {why:?}")
+                    }
+                }
             }
         }
     }
