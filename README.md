@@ -1,3 +1,6 @@
+> [!NOTE]
+> Experimental branch with Groq as the AI backend. Install `pkgconf` for Ubuntu systems.
+
 # v1pseek now in Rust
 
 An inside joke over at the CuteFunny Discord server. Written in Rust using [serenity](https://github.com/serenity-rs/serenity)
