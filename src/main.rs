@@ -51,7 +51,7 @@ impl EventHandler for Handler {
             let user_name = &msg.author.name;
             let display_name = &msg.author.display_name();
             let msg_content = &msg.content_safe(&context.cache);
-            let system_prompt = LazyLock::force(&SYSTEM_PROMPT);
+            let system_prompt: Vec<&str> = LazyLock::force(&SYSTEM_PROMPT).split("---").collect();
 
             // rudimentary logging
             println!("{user_name:?}, channel {channel_name:?}: {msg_content:?}");
@@ -59,14 +59,14 @@ impl EventHandler for Handler {
             let groq_msg = vec![
                 GroqMessage::SystemMessage {
                     role: Some("system".to_string()),
-                    content: Some(system_prompt.to_string()),
+                    content: Some(system_prompt[0].to_string()),
                     name: None,
                     tool_call_id: None,
                 },
                 GroqMessage::UserMessage {
                     role: Some("user".to_string()),
                     content: Some(
-                        format!("User name: {user_name:?}, Display name: {display_name:?}, Channel: {channel_name:?}, Message: {msg_content:?}").to_string(),
+                        format!("{}\nUser name: {user_name:?}, Display name: {display_name:?}, Channel: {channel_name:?}, Message: {msg_content:?}", system_prompt[1]).to_string(),
                     ),
                     name: None,
                     tool_call_id: None,
