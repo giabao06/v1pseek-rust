@@ -1,5 +1,5 @@
 > [!NOTE]
-> Experimental branch with Groq as the AI backend. Install `pkgconf` for Ubuntu systems.
+> Experimental branch with Groq as the AI backend. See [#2](https://github.com/giabao06/v1pseek-rust/issues/2) for some notes.
 
 # v1pseek now in Rust
 
