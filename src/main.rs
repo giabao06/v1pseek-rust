@@ -52,7 +52,7 @@ impl EventHandler for Handler {
             let user_name = &msg.author.name;
             let display_name = &msg.author.display_name();
             let msg_content = &msg.content_safe(&context.cache);
-            let system_prompt = LazyLock::force(&SYSTEM_PROMPT);
+            let system_prompt: Vec<&str> = LazyLock::force(&SYSTEM_PROMPT).split("---").collect();
 
             // rudimentary logging
             println!("{user_name:?}, channel {channel_name:?}: {msg_content:?}");
@@ -61,8 +61,9 @@ impl EventHandler for Handler {
             let ai_response = GEMINI_CLIENT
                 .create_interaction()
                 .with_model(GEMINI_MODEL.clone())
+                .with_system_instruction(system_prompt[0].to_string())
                 .with_text(format!(
-                    "{system_prompt:?}\n\n Channel name: {channel_name:?}\nUser name: {user_name:?}\n, Display name: {display_name:?}\n Message: {msg_content:?}\n",
+                    "{}\nChannel name: {channel_name:?}\nUser name: {user_name:?}\n, Display name: {display_name:?}\n Message: {msg_content:?}\n", system_prompt[1]
                 ))
                 .execute()
                 .await;
