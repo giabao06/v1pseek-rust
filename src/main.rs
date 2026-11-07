@@ -3,7 +3,6 @@ extern crate dotenv;
 
 use dotenv::dotenv;
 
-use gemini_rust::prelude::*;
 use serenity::async_trait;
 use serenity::model::channel::Message;
 use serenity::model::gateway::Ready;
@@ -11,18 +10,18 @@ use serenity::prelude::*;
 use std::fs::read_to_string;
 use std::sync::LazyLock;
 
-static GEMINI_API_KEY: LazyLock<String> =
-    LazyLock::new(|| env::var("GEMINI_API_KEY").expect("No Gemini API key provided!"));
+use groq_api_rs::completion::{
+    client::CompletionOption, client::Groq, message::Message as GroqMessage, request::builder,
+};
 
-static GEMINI_MODEL: LazyLock<String> =
-    LazyLock::new(|| env::var("GEMINI_MODEL").expect("Choose a gemini model!"));
+static GROQ_API_KEY: LazyLock<String> =
+    LazyLock::new(|| env::var("GROQ_API_KEY").expect("No Groq API key provided!"));
+
+static GROQ_MODEL: LazyLock<String> =
+    LazyLock::new(|| env::var("GROQ_MODEL").expect("Choose a groq model!"));
 
 static SYSTEM_PROMPT: LazyLock<String> =
     LazyLock::new(|| read_to_string("SYSTEM_PROMPT.md").expect("Where's the system prompt?"));
-
-static GEMINI_CLIENT: LazyLock<Gemini> = LazyLock::new(|| {
-    Gemini::new(LazyLock::force(&GEMINI_API_KEY)).expect("Failed to create client!")
-});
 
 struct Handler;
 
@@ -57,20 +56,39 @@ impl EventHandler for Handler {
             // rudimentary logging
             println!("{user_name:?}, channel {channel_name:?}: {msg_content:?}");
 
+            let groq_msg = vec![
+                GroqMessage::SystemMessage {
+                    role: Some("system".to_string()),
+                    content: Some(system_prompt.to_string()),
+                    name: None,
+                    tool_call_id: None,
+                },
+                GroqMessage::UserMessage {
+                    role: Some("user".to_string()),
+                    content: Some(
+                        format!("User name: {user_name:?}, Display name: {display_name:?}, Channel: {channel_name:?}, Message: {msg_content:?}").to_string(),
+                    ),
+                    name: None,
+                    tool_call_id: None,
+                },
+            ];
             // call the Gemini API while constructing the full prompt on the fly
-            let ai_response = GEMINI_CLIENT
-                .create_interaction()
-                .with_model(GEMINI_MODEL.clone())
-                .with_text(format!(
-                    "{system_prompt:?}\n\n Channel name: {channel_name:?}\nUser name: {user_name:?}\n, Display name: {display_name:?}\n Message: {msg_content:?}\n",
-                ))
-                .execute()
-                .await;
+            let mut groq_client = Groq::new(&GROQ_API_KEY);
+            let request = builder::RequestBuilder::new(GROQ_MODEL.to_string());
+            groq_client.add_messages(groq_msg);
+            let ai_response = groq_client.create(request).await;
 
             match ai_response {
-                Ok(v) => {
+                Ok(CompletionOption::NonStream(v)) => {
                     // cut 1999 characters because Discord
-                    let final_response: String = v.output_text().chars().take(1999).collect();
+                    let final_response: String = v
+                        .choices
+                        .first()
+                        .map(|choice| choice.message.content.clone())
+                        .unwrap_or_default()
+                        .chars()
+                        .take(1999)
+                        .collect();
 
                     // send the AI reply.
                     // That's it. that's the bot. I made the thing in like a day or something. While being new to Rust.
@@ -78,8 +96,11 @@ impl EventHandler for Handler {
                         println!("Error sending msg: {why:?}")
                     }
                 }
+                Ok(CompletionOption::Stream(_)) => {
+                    // This block intentionally left blank
+                }
                 Err(e) => {
-                    println!("Failed to get Gemini API response: {e:?}");
+                    println!("Failed to get Groq API response: {e:?}");
                     if let Err(why) = msg
                         .reply(
                             &context.http,
