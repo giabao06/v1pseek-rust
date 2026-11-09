@@ -11,6 +11,9 @@ use serenity::prelude::*;
 use std::fs::read_to_string;
 use std::sync::LazyLock;
 
+const DISCORD_MESSAGE_LIMIT: usize = 2000;
+const GENERIC_USER_ERROR: &str = "Giờ vip-chan hơi mệt, đợi tí rồi kêu lại nya~";
+
 static GEMINI_API_KEY: LazyLock<String> =
     LazyLock::new(|| env::var("GEMINI_API_KEY").expect("No Gemini API key provided!"));
 
@@ -26,6 +29,24 @@ static GEMINI_CLIENT: LazyLock<Gemini> = LazyLock::new(|| {
 
 struct Handler;
 
+fn split_response_chunks(text: &str, max_chars: usize) -> Vec<String> {
+    if text.is_empty() || max_chars == 0 {
+        return Vec::new();
+    }
+
+    text.chars()
+        .collect::<Vec<char>>()
+        .chunks(max_chars)
+        .map(|chunk| chunk.iter().collect())
+        .collect()
+}
+
+async fn notify_user_error(context: &Context, msg: &Message, text: &str) {
+    if let Err(why) = msg.channel_id.say(&context.http, text).await {
+        eprintln!("Error sending fallback error msg: {why:?}");
+    }
+}
+
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, context: Context, msg: Message) {
@@ -39,7 +60,8 @@ impl EventHandler for Handler {
             let channel = match msg.channel_id.to_channel(&context).await {
                 Ok(channel) => channel,
                 Err(why) => {
-                    println!("Error getting channel: {why:?}");
+                    eprintln!("Error getting channel: {why:?}");
+                    notify_user_error(&context, &msg, GENERIC_USER_ERROR).await;
                     return;
                 }
             };
@@ -52,7 +74,11 @@ impl EventHandler for Handler {
             let user_name = &msg.author.name;
             let display_name = &msg.author.display_name();
             let msg_content = &msg.content_safe(&context.cache);
-            let system_prompt: Vec<&str> = LazyLock::force(&SYSTEM_PROMPT).split("---").collect();
+            let Some((system_instruction, prompt_prefix)) = LazyLock::force(&SYSTEM_PROMPT).split_once("---") else {
+                eprintln!("Invalid system prompt format: expected delimiter '---'");
+                notify_user_error(&context, &msg, GENERIC_USER_ERROR).await;
+                return;
+            };
 
             // rudimentary logging
             println!("{user_name:?}, channel {channel_name:?}: {msg_content:?}");
@@ -61,35 +87,44 @@ impl EventHandler for Handler {
             let ai_response = GEMINI_CLIENT
                 .create_interaction()
                 .with_model(GEMINI_MODEL.clone())
-                .with_system_instruction(system_prompt[0].to_string())
+                .with_system_instruction(system_instruction.to_string())
                 .with_text(format!(
-                    "{}\nChannel name: {channel_name:?}\nUser name: {user_name:?}\n, Display name: {display_name:?}\n Message: {msg_content:?}\n", system_prompt[1]
+                    "{}\nChannel name: {channel_name:?}\nUser name: {user_name:?}\n, Display name: {display_name:?}\n Message: {msg_content:?}\n", prompt_prefix
                 ))
                 .execute()
                 .await;
 
             match ai_response {
                 Ok(v) => {
-                    // cut 1999 characters because Discord
-                    let final_response: String = v.output_text().chars().take(1999).collect();
+                    let response_chunks =
+                        split_response_chunks(&v.output_text(), DISCORD_MESSAGE_LIMIT);
 
-                    // send the AI reply.
-                    // That's it. that's the bot. I made the thing in like a day or something. While being new to Rust.
-                    if let Err(why) = msg.reply(&context.http, final_response).await {
-                        println!("Error sending msg: {why:?}")
+                    if response_chunks.is_empty() {
+                        notify_user_error(&context, &msg, GENERIC_USER_ERROR).await;
+                        return;
+                    }
+
+                    let mut chunks = response_chunks.into_iter();
+
+                    if let Some(first_chunk) = chunks.next()
+                        && let Err(why) = msg.reply(&context.http, first_chunk).await
+                    {
+                        eprintln!("Error sending first response chunk: {why:?}");
+                        notify_user_error(&context, &msg, GENERIC_USER_ERROR).await;
+                        return;
+                    }
+
+                    for chunk in chunks {
+                        if let Err(why) = msg.channel_id.say(&context.http, chunk).await {
+                            eprintln!("Error sending continued response chunk: {why:?}");
+                            notify_user_error(&context, &msg, GENERIC_USER_ERROR).await;
+                            break;
+                        }
                     }
                 }
                 Err(e) => {
-                    println!("Failed to get Gemini API response: {e:?}");
-                    if let Err(why) = msg
-                        .reply(
-                            &context.http,
-                            "Giờ vip-chan hơi mệt, đợi tí rồi kêu lại nya~",
-                        )
-                        .await
-                    {
-                        println!("Error sending error msg: {why:?}")
-                    }
+                    eprintln!("Failed to get Gemini API response: {e:?}");
+                    notify_user_error(&context, &msg, GENERIC_USER_ERROR).await;
                 }
             }
         }
@@ -103,7 +138,9 @@ impl EventHandler for Handler {
 #[tokio::main]
 async fn main() {
     // load dotenv
-    dotenv().ok();
+    if let Err(why) = dotenv() {
+        eprintln!("Warning: failed loading .env file: {why}");
+    }
     // take the token and set intenst
     // We just need to read Server messages and message contents
     let token = env::var("BOT_TOKEN").expect("No token provided!");
@@ -115,6 +152,28 @@ async fn main() {
         .await
         .expect("Failed to create client");
     if let Err(why) = client.start().await {
-        println!("Client error: {why:?}")
+        eprintln!("Client error: {why:?}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DISCORD_MESSAGE_LIMIT, split_response_chunks};
+
+    #[test]
+    fn keeps_short_response_in_single_chunk() {
+        let chunks = split_response_chunks("hello", DISCORD_MESSAGE_LIMIT);
+        assert_eq!(chunks, vec!["hello"]);
+    }
+
+    #[test]
+    fn splits_long_response_into_multiple_chunks() {
+        let text = "a".repeat(DISCORD_MESSAGE_LIMIT * 2 + 1);
+        let chunks = split_response_chunks(&text, DISCORD_MESSAGE_LIMIT);
+
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].chars().count(), DISCORD_MESSAGE_LIMIT);
+        assert_eq!(chunks[1].chars().count(), DISCORD_MESSAGE_LIMIT);
+        assert_eq!(chunks[2].chars().count(), 1);
     }
 }
